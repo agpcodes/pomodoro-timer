@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Pomodoro">
+    <title>Pomodoro</title>
+    <style>
+        * {
+            margin: 0; padding: 0; box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #F2E4D4;
+            font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+            min-height: 100svh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: max(env(safe-area-inset-top, 0px), 48px) 24px max(env(safe-area-inset-bottom, 0px), 28px);
+            color: #1E4D3A;
+        }
+
+        .eyebrow {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            opacity: 0.45;
+            margin-bottom: 3px;
+        }
+
+        .heading {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 20px;
+        }
+
+        .bag-wrap {
+            width: 280px;
+            height: 345px;
+        }
+
+        .timer-block {
+            text-align: center;
+            margin: 12px 0 26px;
+        }
+
+        .time {
+            font-size: 72px;
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            line-height: 1;
+            transition: color 0.4s ease;
+        }
+
+        .time.break-mode { color: #F0B429; }
+
+        .time-sub {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            opacity: 0.5;
+            margin-top: 8px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            height: 52px;
+            padding: 0 28px;
+            border-radius: 100px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 2.5px solid #1E4D3A;
+            letter-spacing: 0.01em;
+            transition: transform 0.12s ease, opacity 0.12s ease;
+            touch-action: manipulation;
+        }
+
+        .btn:active { transform: scale(0.94); opacity: 0.85; }
+
+        .btn-fill {
+            background: #1E4D3A;
+            color: #F2E4D4;
+            min-width: 128px;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: #1E4D3A;
+        }
+
+        .hidden { display: none !important; }
+
+        /* Done overlay */
+        .done {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #F2E4D4;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 40px 32px;
+        }
+
+        .done.on { display: flex; }
+
+        .done-icon { margin-bottom: 26px; }
+
+        .done h2 {
+            font-size: 40px;
+            font-weight: 800;
+            text-align: center;
+            line-height: 1.15;
+            margin-bottom: 10px;
+            letter-spacing: -0.02em;
+        }
+
+        .done p {
+            font-size: 16px;
+            text-align: center;
+            opacity: 0.55;
+            line-height: 1.6;
+            margin-bottom: 44px;
+        }
+
+        .done-btns {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 260px;
+        }
+
+        .done-btns .btn { width: 100%; }
+
+        .btn-yellow {
+            background: #F0B429;
+            color: #1E4D3A;
+            border-color: #F0B429;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="eyebrow">Focus Session</div>
+    <div class="heading">Pomodoro</div>
+
+    <div class="bag-wrap">
+        <!--
+            Bag body: x=26, y=100, w=228, h=220 (bottom at y=320)
+            Fold line: y=140
+            Tomato clip: y=140 to y=320
+            Tomato grid: 5 cols x 5 rows filling bottom-to-top
+            colX: [52, 96, 140, 184, 228]  spacing=44
+            rowY (bottom to top): [297, 263, 229, 195, 161]  spacing=34
+            Tomato: rx=14, ry=13
+        -->
+        <svg id="bagSvg" viewBox="0 0 280 345" width="280" height="345" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <clipPath id="bagClip">
+                    <rect x="26" y="140" width="228" height="180"/>
+                </clipPath>
+            </defs>
+
+            <!-- Left handle -->
+            <path d="M 90,100 C 90,42 145,42 145,100"
+                  fill="none" stroke="#1E4D3A" stroke-width="7" stroke-linecap="round"/>
+            <!-- Right handle -->
+            <path d="M 155,100 C 155,42 210,42 210,100"
+                  fill="none" stroke="#1E4D3A" stroke-width="7" stroke-linecap="round"/>
+
+            <!-- Bag fill (behind tomatoes) -->
+            <rect x="26" y="100" width="228" height="220" rx="6" fill="#F2E4D4"/>
+
+            <!-- Tomatoes, clipped to interior below fold line -->
+            <g id="tg" clip-path="url(#bagClip)"></g>
+
+            <!-- Bag outline on top -->
+            <rect x="26" y="100" width="228" height="220" rx="6"
+                  fill="none" stroke="#1E4D3A" stroke-width="5"/>
+
+            <!-- Fold line -->
+            <line x1="26" y1="140" x2="254" y2="140" stroke="#1E4D3A" stroke-width="3"/>
+        </svg>
+    </div>
+
+    <div class="timer-block">
+        <div class="time" id="disp">25:00</div>
+        <div class="time-sub" id="lbl">minutes remaining</div>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-fill" id="mainBtn" onclick="handleMain()">Start</button>
+        <button class="btn btn-outline hidden" id="rstBtn" onclick="handleReset()">Reset</button>
+    </div>
+
+    <!-- Done screen -->
+    <div class="done" id="doneScreen">
+        <div class="done-icon">
+            <!-- Tomato on yellow-striped circle, matching image 2 style -->
+            <svg width="100" height="100" viewBox="0 0 100 100">
+                <!-- Yellow circle background -->
+                <circle cx="50" cy="50" r="48" fill="#F0B429"/>
+                <!-- Stripes -->
+                <rect x="8"  y="2" width="13" height="96" fill="#F5CA5C" opacity="0.65"/>
+                <rect x="34" y="2" width="13" height="96" fill="#F5CA5C" opacity="0.65"/>
+                <rect x="60" y="2" width="13" height="96" fill="#F5CA5C" opacity="0.65"/>
+                <rect x="86" y="2" width="13" height="96" fill="#F5CA5C" opacity="0.65"/>
+                <!-- Clip stripes to circle -->
+                <circle cx="50" cy="50" r="48" fill="none" stroke="#F2E4D4" stroke-width="0"/>
+                <!-- Tomato body -->
+                <ellipse cx="50" cy="64" rx="27" ry="25" fill="#C8392B"/>
+                <!-- Highlight -->
+                <ellipse cx="38" cy="53" rx="8" ry="6" fill="#E05A4B" opacity="0.35"/>
+                <!-- Stem -->
+                <rect x="47.5" y="30" width="5" height="12" rx="2.5" fill="#1E4D3A"/>
+                <!-- Leaves -->
+                <line x1="50" y1="40" x2="36" y2="30" stroke="#1E4D3A" stroke-width="3.5" stroke-linecap="round"/>
+                <line x1="50" y1="38" x2="50" y2="24" stroke="#1E4D3A" stroke-width="3.5" stroke-linecap="round"/>
+                <line x1="50" y1="40" x2="64" y2="30" stroke="#1E4D3A" stroke-width="3.5" stroke-linecap="round"/>
+                <line x1="50" y1="39" x2="40" y2="25" stroke="#1E4D3A" stroke-width="3" stroke-linecap="round"/>
+                <line x1="50" y1="39" x2="60" y2="25" stroke="#1E4D3A" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+        </div>
+        <h2>Congrats,<br>You're Done!</h2>
+        <p>You completed a 25-minute<br>focus session.</p>
+        <div class="done-btns">
+            <button class="btn btn-yellow" onclick="startBreak()">Take a 5-min break</button>
+            <button class="btn btn-outline" onclick="resetAll()">Start Over</button>
+        </div>
+    </div>
+
+    <script>
+        const WORK = 25 * 60;
+        const BREAK = 5 * 60;
+
+        let secs = WORK;
+        let iv = null;
+        let going = false;
+        let onBreak = false;
+        let wakeLock = null;
+
+        // Chime: three ascending bell tones using Web Audio API
+        function playChime() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const tones = [523.25, 659.25, 783.99]; // C5, E5, G5 — a bright major chord
+            tones.forEach((freq, i) => {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                const start = ctx.currentTime + i * 0.28;
+                gain.gain.setValueAtTime(0, start);
+                gain.gain.linearRampToValueAtTime(0.45, start + 0.02);  // quick attack
+                gain.gain.exponentialRampToValueAtTime(0.001, start + 1.6); // slow bell decay
+                osc.start(start);
+                osc.stop(start + 1.6);
+            });
+        }
+
+        // Grid: 5 cols x 5 rows, indices 0-24 fill bottom-to-top, left-to-right
+        const COL_X = [52, 96, 140, 184, 228];
+        const ROW_Y = [297, 263, 229, 195, 161]; // index 0 = bottom row
+
+        function buildTomatoes() {
+            const g = document.getElementById('tg');
+            g.innerHTML = '';
+            let idx = 0;
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
+                    g.appendChild(makeTomato(COL_X[c], ROW_Y[r], idx++));
+                }
+            }
+        }
+
+        function makeTomato(x, y, i) {
+            const ns = 'http://www.w3.org/2000/svg';
+            const g = document.createElementNS(ns, 'g');
+            g.id = 't' + i;
+            g.style.cssText = 'opacity:0;transition:opacity 0.5s ease';
+
+            // Body
+            const body = document.createElementNS(ns, 'ellipse');
+            body.setAttribute('cx', x);      body.setAttribute('cy', y + 1);
+            body.setAttribute('rx', '14');   body.setAttribute('ry', '13');
+            body.setAttribute('fill', '#C8392B');
+
+            // Highlight
+            const hl = document.createElementNS(ns, 'ellipse');
+            hl.setAttribute('cx', x - 4);   hl.setAttribute('cy', y - 5);
+            hl.setAttribute('rx', '4');      hl.setAttribute('ry', '3');
+            hl.setAttribute('fill', '#E05A4B');
+            hl.setAttribute('opacity', '0.4');
+
+            // Stem
+            const stem = document.createElementNS(ns, 'rect');
+            stem.setAttribute('x', x - 1.5); stem.setAttribute('y', y - 15);
+            stem.setAttribute('width', '3'); stem.setAttribute('height', '7');
+            stem.setAttribute('rx', '1.5');  stem.setAttribute('fill', '#1E4D3A');
+
+            // Leaves (3 radiating lines)
+            [[-38, 7], [0, 8], [38, 7]].forEach(([deg, len]) => {
+                const rad = deg * Math.PI / 180;
+                const l = document.createElementNS(ns, 'line');
+                l.setAttribute('x1', x);
+                l.setAttribute('y1', y - 13);
+                l.setAttribute('x2', x + Math.sin(rad) * len);
+                l.setAttribute('y2', y - 13 - Math.cos(rad) * 5);
+                l.setAttribute('stroke', '#1E4D3A');
+                l.setAttribute('stroke-width', '2');
+                l.setAttribute('stroke-linecap', 'round');
+                g.appendChild(l);
+            });
+
+            g.appendChild(body);
+            g.appendChild(hl);
+            g.appendChild(stem);
+            return g;
+        }
+
+        function show(n) {
+            for (let i = 0; i < 25; i++) {
+                const el = document.getElementById('t' + i);
+                if (el) el.style.opacity = i < n ? '1' : '0.18';
+            }
+        }
+
+        function fmt(s) {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        }
+
+        function tick() {
+            if (secs <= 0) {
+                clearInterval(iv);
+                going = false;
+                releaseWakeLock();
+
+                if (onBreak) {
+                    show(0);
+                    resetAll();
+                } else {
+                    show(25);
+                    playChime();
+                    document.getElementById('disp').textContent = '00:00';
+                    document.getElementById('doneScreen').classList.add('on');
+                }
+                return;
+            }
+
+            secs--;
+            document.getElementById('disp').textContent = fmt(secs);
+
+            if (!onBreak) {
+                // 1 tomato per elapsed minute
+                const elapsed = WORK - secs;
+                show(Math.min(25, Math.floor(elapsed / 60)));
+            } else {
+                // smooth drain: 1 tomato removed every 12 seconds (300s / 25 = 12s each)
+                const elapsed = BREAK - secs;
+                const removed = Math.floor(elapsed / 12);
+                show(Math.max(0, 25 - removed));
+            }
+        }
+
+        function handleMain() {
+            if (!going) {
+                going = true;
+                iv = setInterval(tick, 1000);
+                requestWakeLock();
+                document.getElementById('mainBtn').textContent = 'Pause';
+                document.getElementById('rstBtn').classList.remove('hidden');
+            } else {
+                going = false;
+                clearInterval(iv);
+                releaseWakeLock();
+                document.getElementById('mainBtn').textContent = 'Resume';
+            }
+        }
+
+        function handleReset() {
+            clearInterval(iv);
+            going = false;
+            onBreak = false;
+            secs = WORK;
+            releaseWakeLock();
+            show(0);
+            document.getElementById('disp').textContent = '25:00';
+            document.getElementById('disp').classList.remove('break-mode');
+            document.getElementById('lbl').textContent = 'minutes remaining';
+            document.getElementById('mainBtn').textContent = 'Start';
+            document.getElementById('rstBtn').classList.add('hidden');
+        }
+
+        function startBreak() {
+            document.getElementById('doneScreen').classList.remove('on');
+            onBreak = true;
+            secs = BREAK;
+            show(25);
+            document.getElementById('disp').textContent = '05:00';
+            document.getElementById('disp').classList.add('break-mode');
+            document.getElementById('lbl').textContent = 'break remaining';
+            document.getElementById('mainBtn').textContent = 'Pause';
+            document.getElementById('rstBtn').classList.remove('hidden');
+            going = true;
+            requestWakeLock();
+            iv = setInterval(tick, 1000);
+        }
+
+        function resetAll() {
+            clearInterval(iv);
+            going = false;
+            onBreak = false;
+            secs = WORK;
+            releaseWakeLock();
+            show(0);
+            document.getElementById('disp').textContent = '25:00';
+            document.getElementById('disp').classList.remove('break-mode');
+            document.getElementById('lbl').textContent = 'minutes remaining';
+            document.getElementById('mainBtn').textContent = 'Start';
+            document.getElementById('rstBtn').classList.add('hidden');
+            document.getElementById('doneScreen').classList.remove('on');
+        }
+
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+            }
+        }
+
+        async function releaseWakeLock() {
+            if (wakeLock) {
+                try { await wakeLock.release(); } catch(e) {}
+                wakeLock = null;
+            }
+        }
+
+        // Re-acquire wake lock if page becomes visible again
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && going) requestWakeLock();
+        });
+
+        buildTomatoes();
+        show(0);
+    </script>
+
+</body>
+</html>
